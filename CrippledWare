@@ -520,5 +520,630 @@ SaveManager:SetFolder("CrippledHub/Crippledware")
 
 SaveManager:BuildConfigSection(Tabs["UI Settings"])
 ThemeManager:ApplyToTab(Tabs["UI Settings"])
+SaveManager:LoadAutoloadConfig() local repo = "https://raw.githubusercontent.com/majeskooooo/Obsidian/main/"
+local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+
+local Options = Library.Options
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+
+-- ============================================================================
+-- CONFIGURATION & CONSTANTS
+-- ============================================================================
+
+local CONFIG = {
+	VERSION = "0.1.1",
+	AUTHOR = "CrippledCrinkle",
+	ICON_ID = 89508097944263,
+	WINDOW_SIZE = UDim2.fromOffset(700, 750),
+	CORNER_RADIUS = 10,
+	DPI_SCALE = 95,
+}
+
+local COLORS = {
+	ENEMY = Color3.fromRGB(255, 60, 60),
+	PLAYER = Color3.fromRGB(80, 150, 255),
+	OUTLINE = Color3.fromRGB(255, 255, 255),
+	TRACER = Color3.fromRGB(255, 255, 255),
+	HITBOX = Color3.fromRGB(0, 100, 255),
+}
+
+local ESP_CONFIG = {
+	FILL_TRANSPARENCY = 0.5,
+	OUTLINE_TRANSPARENCY = 0,
+	TRACER_THICKNESS = 0.15,
+	MAX_DISTANCE = 500,
+}
+
+-- ============================================================================
+-- WINDOW SETUP
+-- ============================================================================
+
+local Window = Library:CreateWindow({
+	Title = "",
+	Footer = "Crippledware",
+	FooterLeft = "v" .. CONFIG.VERSION,
+	FooterRight = "by " .. CONFIG.AUTHOR,
+	Icon = CONFIG.ICON_ID,
+	NotifySide = "Right",
+	ShowCustomCursor = true,
+	Size = CONFIG.WINDOW_SIZE,
+	Center = true,
+	Resizable = true,
+	SidebarCompacted = true,
+	ShowMobileButtons = false,
+	CornerRadius = CONFIG.CORNER_RADIUS,
+})
+
+local Tabs = {
+	Character = Window:AddTab("Character", "user", "Movement & Hitbox"),
+	Visuals = Window:AddTab("Visuals", "eye", "ESP & Visualization"),
+	["UI Settings"] = Window:AddTab("UI Settings", "settings", "Interface & Theme"),
+}
+
+Library:SetDPIScale(CONFIG.DPI_SCALE)
+
+-- ============================================================================
+-- MOBILE SUPPORT
+-- ============================================================================
+
+if Library.IsMobile then
+	local CustomToggleButton = Instance.new("ImageButton")
+	CustomToggleButton.Name = "CustomToggleButton"
+	CustomToggleButton.BackgroundColor3 = Library.Scheme.BackgroundColor
+	CustomToggleButton.Image = "rbxassetid://" .. CONFIG.ICON_ID
+	CustomToggleButton.ScaleType = Enum.ScaleType.Fit
+	CustomToggleButton.Size = UDim2.fromOffset(40, 40)
+	CustomToggleButton.Position = UDim2.fromOffset(6, 6)
+	CustomToggleButton.ZIndex = 10
+	CustomToggleButton.Parent = Library.ScreenGui
+
+	local ToggleButtonCorner = Instance.new("UICorner")
+	ToggleButtonCorner.CornerRadius = UDim.new(0, CONFIG.CORNER_RADIUS)
+	ToggleButtonCorner.Parent = CustomToggleButton
+
+	Library:AddOutline(CustomToggleButton)
+	Library:MakeDraggable(CustomToggleButton, CustomToggleButton, true)
+
+	if not table.find(Library.DraggableElements, CustomToggleButton) then
+		table.insert(Library.DraggableElements, CustomToggleButton)
+	end
+
+	CustomToggleButton.InputBegan:Connect(function(Input)
+		if Input.UserInputType ~= Enum.UserInputType.MouseButton1 and Input.UserInputType ~= Enum.UserInputType.Touch then
+			return
+		end
+
+		local Start = tick()
+		local Changed
+		Changed = Input.Changed:Connect(function()
+			if Input.UserInputState ~= Enum.UserInputState.End then
+				return
+			end
+
+			local IsLikelyDragging = tick() - Start > 0.35
+			if not IsLikelyDragging then
+				Library:Toggle()
+			end
+
+			if Changed and Changed.Connected then
+				Changed:Disconnect()
+			end
+		end)
+	end)
+end
+
+-- ============================================================================
+-- BACKGROUND GLASS EFFECT
+-- ============================================================================
+
+local BackgroundEffects = {
+	Transparency = 0.2,
+	BlurAmount = 0,
+}
+
+local function ApplyGlassEffect()
+	local MainFrame = Window.MainFrame
+	if not MainFrame then return end
+	
+	-- Apply transparency with glass morphism effect
+	MainFrame.BackgroundTransparency = BackgroundEffects.Transparency
+	
+	-- Optional: Add blur effect if available in the library
+	if MainFrame:FindFirstChild("UIBlur") then
+		MainFrame:FindFirstChild("UIBlur").Size = UDim.new(0, BackgroundEffects.BlurAmount)
+	end
+end
+
+-- ============================================================================
+-- CHARACTER MODIFICATIONS
+-- ============================================================================
+
+local CharacterBox = Tabs.Character:AddLeftGroupbox("Movement", "zap")
+
+CharacterBox:AddSlider("WalkSpeed", {
+	Text = "Walk Speed",
+	Default = 16,
+	Min = 0,
+	Max = 100,
+	Rounding = 1,
+	Callback = function(Value)
+		local Character = LocalPlayer.Character
+		if not Character then return end
+		local Humanoid = Character:FindFirstChild("Humanoid")
+		if Humanoid then
+			Humanoid.WalkSpeed = Value
+		end
+	end,
+})
+
+CharacterBox:AddSlider("JumpPower", {
+	Text = "Jump Power",
+	Default = 50,
+	Min = 0,
+	Max = 200,
+	Rounding = 1,
+	Callback = function(Value)
+		local Character = LocalPlayer.Character
+		if not Character then return end
+		local Humanoid = Character:FindFirstChild("Humanoid")
+		if Humanoid then
+			Humanoid.JumpPower = Value
+		end
+	end,
+})
+
+-- ============================================================================
+-- HITBOX EXPANSION SYSTEM
+-- ============================================================================
+
+local HitboxBox = Tabs.Character:AddRightGroupbox("Hitbox Expander", "box")
+
+local HitboxState = {
+	Enabled = false,
+	Hitboxes = {},
+	Size = 1,
+	Transparency = 0.5,
+	TeamCheck = true
+}
+
+local function CreateHitbox(Character, Size, Transparency)
+	if not Character then return end
+	local HRP = Character:FindFirstChild("HumanoidRootPart")
+	if not HRP then return end
+	
+	-- Remove existing hitbox
+	if HitboxState.Hitboxes[Character] then
+		HitboxState.Hitboxes[Character]:Destroy()
+	end
+	
+	local Hitbox = Instance.new("Part")
+	Hitbox.Name = "ExpandedHitbox"
+	Hitbox.Shape = Enum.PartType.Block
+	Hitbox.Material = Enum.Material.Neon
+	Hitbox.CanCollide = false
+	Hitbox.CFrame = HRP.CFrame
+	Hitbox.Size = HRP.Size * Size
+	Hitbox.Transparency = Transparency
+	Hitbox.Color = COLORS.HITBOX
+	Hitbox.Parent = HRP
+	
+	HitboxState.Hitboxes[Character] = Hitbox
+	
+	local Weld = Instance.new("WeldConstraint")
+	Weld.Part0 = HRP
+	Weld.Part1 = Hitbox
+	Weld.Parent = Hitbox
+end
+
+local function RemoveHitbox(Character)
+	if not Character then return end
+	if HitboxState.Hitboxes[Character] then
+		pcall(function() HitboxState.Hitboxes[Character]:Destroy() end)
+		HitboxState.Hitboxes[Character] = nil
+	end
+end
+
+local function UpdateAllHitboxes()
+	for _, Plr in ipairs(Players:GetPlayers()) do
+		if Plr ~= LocalPlayer and Plr.Character then
+			if HitboxState.Enabled then
+				if HitboxState.TeamCheck and Plr.Team == LocalPlayer.Team then
+					RemoveHitbox(Plr.Character)
+				else
+					CreateHitbox(Plr.Character, HitboxState.Size, HitboxState.Transparency)
+				end
+			else
+				RemoveHitbox(Plr.Character)
+			end
+		end
+	end
+end
+
+HitboxBox:AddCheckbox("HitboxEnabled", {
+	Text = "Enable Hitbox Expander",
+	Default = false,
+	Callback = function(Value)
+		HitboxState.Enabled = Value
+		UpdateAllHitboxes()
+	end,
+})
+
+HitboxBox:AddCheckbox("HitboxTeamCheck", {
+	Text = "Team Check",
+	Default = true,
+	Callback = function(Value)
+		HitboxState.TeamCheck = Value
+		UpdateAllHitboxes()
+	end,
+})
+
+HitboxBox:AddSlider("HitboxSize", {
+	Text = "Hitbox Size",
+	Default = 1,
+	Min = 0.5,
+	Max = 5,
+	Rounding = 0.1,
+	Callback = function(Value)
+		HitboxState.Size = Value
+		UpdateAllHitboxes()
+	end,
+})
+
+HitboxBox:AddSlider("HitboxTransparency", {
+	Text = "Transparency",
+	Default = 0.5,
+	Min = 0,
+	Max = 1,
+	Rounding = 0.05,
+	Callback = function(Value)
+		HitboxState.Transparency = Value
+		UpdateAllHitboxes()
+	end,
+})
+
+-- ============================================================================
+-- ESP SYSTEM
+-- ============================================================================
+
+local EspBox = Tabs.Visuals:AddLeftGroupbox("ESP", "eye")
+
+local EspState = {
+	Enabled = false,
+	Highlights = {},
+	EspNames = {},
+	NamesEnabled = true,
+	TracerBeams = {},
+	TracerEnabled = false,
+	TeamCheck = true
+}
+
+local function CreateHighlight(Instance, FillColor)
+	if not Instance or EspState.Highlights[Instance] then return end
+	
+	local Highlight = Instance.new("Highlight")
+	Highlight.FillColor = FillColor
+	Highlight.OutlineColor = COLORS.OUTLINE
+	Highlight.FillTransparency = ESP_CONFIG.FILL_TRANSPARENCY
+	Highlight.OutlineTransparency = ESP_CONFIG.OUTLINE_TRANSPARENCY
+	Highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+	Highlight.Parent = Instance
+	EspState.Highlights[Instance] = Highlight
+end
+
+local function RemoveHighlight(Instance)
+	if not Instance then return end
+	local Highlight = EspState.Highlights[Instance]
+	if Highlight then
+		pcall(function() Highlight:Destroy() end)
+		EspState.Highlights[Instance] = nil
+	end
+end
+
+local function CreateEspName(Character, PlayerName)
+	if not Character or EspState.EspNames[Character] then return end
+	local HRP = Character:FindFirstChild("HumanoidRootPart")
+	if not HRP then return end
+	
+	local BillboardGui = Instance.new("BillboardGui")
+	BillboardGui.Adornee = HRP
+	BillboardGui.Size = UDim2.fromOffset(100, 50)
+	BillboardGui.MaxDistance = ESP_CONFIG.MAX_DISTANCE
+	BillboardGui.Parent = HRP
+	
+	local TextLabel = Instance.new("TextLabel")
+	TextLabel.BackgroundTransparency = 1
+	TextLabel.Size = UDim2.fromScale(1, 1)
+	TextLabel.Text = PlayerName
+	TextLabel.TextColor3 = COLORS.PLAYER
+	TextLabel.TextScaled = true
+	TextLabel.Font = Enum.Font.GothamBold
+	TextLabel.Parent = BillboardGui
+	
+	EspState.EspNames[Character] = BillboardGui
+end
+
+local function RemoveEspName(Character)
+	if not Character then return end
+	local Billboard = EspState.EspNames[Character]
+	if Billboard then
+		pcall(function() Billboard:Destroy() end)
+		EspState.EspNames[Character] = nil
+	end
+end
+
+local function CreateTracerBeam(Plr)
+	if not Plr or EspState.TracerBeams[Plr] then return end
+	
+	local PlayerChar = Plr.Character
+	local LocalChar = LocalPlayer.Character
+	if not PlayerChar or not LocalChar then return end
+	
+	local PlayerHRP = PlayerChar:FindFirstChild("HumanoidRootPart")
+	local LocalHRP = LocalChar:FindFirstChild("HumanoidRootPart")
+	if not PlayerHRP or not LocalHRP then return end
+	
+	local Attachment0 = Instance.new("Attachment")
+	Attachment0.Parent = LocalHRP
+	
+	local Attachment1 = Instance.new("Attachment")
+	Attachment1.Parent = PlayerHRP
+	
+	local Beam = Instance.new("Beam")
+	Beam.Attachment0 = Attachment0
+	Beam.Attachment1 = Attachment1
+	Beam.Color = ColorSequence.new(COLORS.TRACER)
+	Beam.Width0 = ESP_CONFIG.TRACER_THICKNESS
+	Beam.Width1 = ESP_CONFIG.TRACER_THICKNESS
+	Beam.FaceCamera = true
+	Beam.Parent = PlayerHRP
+	
+	EspState.TracerBeams[Plr] = {
+		Beam = Beam,
+		Start = Attachment0,
+		End = Attachment1
+	}
+end
+
+local function RemoveTracerBeam(Plr)
+	if not Plr then return end
+	local Data = EspState.TracerBeams[Plr]
+	if Data then
+		pcall(function()
+			if Data.Beam then Data.Beam:Destroy() end
+			if Data.Start then Data.Start:Destroy() end
+			if Data.End then Data.End:Destroy() end
+		end)
+		EspState.TracerBeams[Plr] = nil
+	end
+end
+
+local function UpdatePlayerEsp(Plr)
+	if not EspState.Enabled or not Plr or not Plr.Character then return end
+	
+	local Character = Plr.Character
+	local IsTeammate = EspState.TeamCheck and Plr.Team == LocalPlayer.Team
+	
+	if IsTeammate then
+		RemoveHighlight(Character)
+		RemoveEspName(Character)
+		RemoveTracerBeam(Plr)
+		return
+	end
+	
+	CreateHighlight(Character, COLORS.ENEMY)
+	
+	if EspState.NamesEnabled then
+		CreateEspName(Character, Plr.Name)
+	else
+		RemoveEspName(Character)
+	end
+	
+	if EspState.TracerEnabled then
+		CreateTracerBeam(Plr)
+	else
+		RemoveTracerBeam(Plr)
+	end
+end
+
+local function RemovePlayerEsp(Plr)
+	if not Plr then return end
+	if Plr.Character then
+		RemoveHighlight(Plr.Character)
+		RemoveEspName(Plr.Character)
+	end
+	RemoveTracerBeam(Plr)
+end
+
+local function RefreshAllEsp()
+	for _, Plr in ipairs(Players:GetPlayers()) do
+		if Plr ~= LocalPlayer then
+			if EspState.Enabled then
+				UpdatePlayerEsp(Plr)
+			else
+				RemovePlayerEsp(Plr)
+			end
+		end
+	end
+end
+
+EspBox:AddCheckbox("EspEnabled", {
+	Text = "Enable ESP",
+	Default = false,
+	Callback = function(Value)
+		EspState.Enabled = Value
+		RefreshAllEsp()
+	end,
+})
+
+EspBox:AddCheckbox("EspNames", {
+	Text = "Show Names",
+	Default = true,
+	Callback = function(Value)
+		EspState.NamesEnabled = Value
+		RefreshAllEsp()
+	end,
+})
+
+EspBox:AddCheckbox("TracerEsp", {
+	Text = "Tracer Lines",
+	Default = false,
+	Callback = function(Value)
+		EspState.TracerEnabled = Value
+		RefreshAllEsp()
+	end,
+})
+
+EspBox:AddCheckbox("EspTeamCheck", {
+	Text = "Team Check",
+	Default = true,
+	Callback = function(Value)
+		EspState.TeamCheck = Value
+		RefreshAllEsp()
+	end,
+})
+
+-- ============================================================================
+-- UI SETTINGS
+-- ============================================================================
+
+local MenuGroup = Tabs["UI Settings"]:AddLeftGroupbox("Menu", "settings")
+
+MenuGroup:AddCheckbox("KeybindMenuOpen", {
+	Text = "Open Keybind Menu",
+	Default = Library.KeybindFrame.Visible,
+	Callback = function(value)
+		Library.KeybindFrame.Visible = value
+	end,
+})
+
+MenuGroup:AddCheckbox("ShowCustomCursor", {
+	Text = "Custom Cursor",
+	Default = Library.ShowCustomCursor,
+	Callback = function(Value)
+		Library.ShowCustomCursor = Value
+	end,
+})
+
+MenuGroup:AddCheckbox("AlwaysOnTop", {
+	Text = "Always On Top",
+	Default = false,
+	Callback = function(Value)
+		Window:SetAlwaysOnTop(Value)
+	end,
+})
+
+MenuGroup:AddDropdown("NotificationSide", {
+	Values = {"Left", "Right"},
+	Default = "Right",
+	Text = "Notification Side",
+	Callback = function(Value)
+		Library:SetNotifySide(Value)
+	end,
+})
+
+-- Glass Effect Settings
+local GlassGroup = Tabs["UI Settings"]:AddRightGroupbox("Background", "palette")
+
+GlassGroup:AddSlider("BackgroundTransparency", {
+	Text = "Background Transparency",
+	Default = 0.2,
+	Min = 0,
+	Max = 1,
+	Rounding = 0.05,
+	Callback = function(Value)
+		BackgroundEffects.Transparency = Value
+		ApplyGlassEffect()
+	end,
+})
+
+GlassGroup:AddLabel("Liquid glass effect applied")
+
+MenuGroup:AddDivider()
+
+MenuGroup:AddLabel("Menu Keybind"):AddKeyPicker("MenuKeybind", {
+	Default = "RightShift",
+	NoUI = true,
+	Text = "Menu keybind",
+})
+
+MenuGroup:AddButton("Unload", function()
+	-- Clean up before unloading
+	RefreshAllEsp()
+	UpdateAllHitboxes()
+	Library:Unload()
+end)
+
+-- ============================================================================
+-- EVENT CONNECTIONS
+-- ============================================================================
+
+Players.PlayerAdded:Connect(function(Plr)
+	if Plr == LocalPlayer then return end
+	Plr.CharacterAdded:Connect(function(Character)
+		task.wait(0.1)
+		if HitboxState.Enabled then
+			UpdateAllHitboxes()
+		end
+		if EspState.Enabled then
+			UpdatePlayerEsp(Plr)
+		end
+	end)
+end)
+
+Players.PlayerRemoving:Connect(function(Plr)
+	RemoveHitbox(Plr.Character)
+	RemovePlayerEsp(Plr)
+end)
+
+-- Tracer beam update loop
+RunService.RenderStepped:Connect(function()
+	if EspState.TracerEnabled and EspState.Enabled then
+		for _, Plr in ipairs(Players:GetPlayers()) do
+			if Plr ~= LocalPlayer and Plr.Character then
+				local IsTeammate = EspState.TeamCheck and Plr.Team == LocalPlayer.Team
+				if not IsTeammate then
+					if EspState.TracerBeams[Plr] then
+						local Data = EspState.TracerBeams[Plr]
+						local PlayerHRP = Plr.Character:FindFirstChild("HumanoidRootPart")
+						local LocalHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+						
+						if not PlayerHRP or not LocalHRP then
+							RemoveTracerBeam(Plr)
+						end
+					else
+						CreateTracerBeam(Plr)
+					end
+				end
+			end
+		end
+	end
+end)
+
+-- ============================================================================
+-- LIBRARY INTEGRATION
+-- ============================================================================
+
+Library.ToggleKeybind = Options.MenuKeybind
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({ "MenuKeybind" })
+
+ThemeManager:SetFolder("CrippledHub")
+SaveManager:SetFolder("CrippledHub/Crippledware")
+
+SaveManager:BuildConfigSection(Tabs["UI Settings"])
+ThemeManager:ApplyToTab(Tabs["UI Settings"])
 
 SaveManager:LoadAutoloadConfig()
+
+-- Apply initial glass effect
+task.wait(0.5)
+ApplyGlassEffect()
+
