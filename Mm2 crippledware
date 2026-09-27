@@ -1,0 +1,352 @@
+--[[
+    ROBLOX STUDIO PRACTICE SCRIPT
+    Learning objectives:
+    - Create custom GUI elements
+    - Implement draggable UI components
+    - Display player information
+    - Build a modular UI system
+    
+    Installation: Place this in StarterPlayer > StarterPlayerScripts (as LocalScript)
+]]
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+-- ============================================
+-- UI MANAGER MODULE
+-- ============================================
+local UIManager = {}
+UIManager.panels = {}
+UIManager.isOpen = true
+
+-- Create main ScreenGui container
+function UIManager:CreateMainGui()
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "CustomUIContainer"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = playerGui
+    return screenGui
+end
+
+-- Create draggable circular toggle button
+function UIManager:CreateToggleButton(parentGui)
+    local toggleButton = Instance.new("TextButton")
+    toggleButton.Name = "ToggleButton"
+    toggleButton.Size = UDim2.new(0, 50, 0, 50)
+    toggleButton.Position = UDim2.new(0, 20, 0, 20)
+    toggleButton.BackgroundColor3 = Color3.fromRGB(0, 100, 255)
+    toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+    toggleButton.Text = "UI"
+    toggleButton.TextSize = 14
+    toggleButton.Font = Enum.Font.GothamBold
+    toggleButton.Parent = parentGui
+    
+    -- Make button circular
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0.5, 0)
+    corner.Parent = toggleButton
+    
+    -- Add stroke for better visibility
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(255, 255, 255)
+    stroke.Thickness = 2
+    stroke.Parent = toggleButton
+    
+    -- ===== DRAGGING FUNCTIONALITY =====
+    local isDragging = false
+    local dragOffset = Vector2.new(0, 0)
+    
+    toggleButton.MouseButton1Down:Connect(function()
+        isDragging = true
+        local mousePos = UserInputService:GetMouseLocation()
+        dragOffset = mousePos - Vector2.new(toggleButton.AbsolutePosition.X, toggleButton.AbsolutePosition.Y)
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input, gameProcessed)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            isDragging = false
+        end
+    end)
+    
+    RunService.RenderStepped:Connect(function()
+        if isDragging then
+            local mousePos = UserInputService:GetMouseLocation()
+            local newPos = mousePos - dragOffset
+            toggleButton.Position = UDim2.new(0, newPos.X, 0, newPos.Y)
+        end
+    end)
+    
+    -- Toggle UI visibility
+    toggleButton.MouseButton1Click:Connect(function()
+        UIManager.isOpen = not UIManager.isOpen
+        for _, panel in pairs(UIManager.panels) do
+            panel.Visible = UIManager.isOpen
+        end
+    end)
+    
+    return toggleButton
+end
+
+-- Create main UI panel
+function UIManager:CreatePanel(parentGui, panelName, size, position)
+    local frame = Instance.new("Frame")
+    frame.Name = panelName
+    frame.Size = size
+    frame.Position = position
+    frame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+    frame.BorderSizePixel = 0
+    frame.Parent = parentGui
+    
+    -- Round corners
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = frame
+    
+    -- Add border
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(0, 100, 200)
+    stroke.Thickness = 2
+    stroke.Parent = frame
+    
+    -- Add padding
+    local padding = Instance.new("UIPadding")
+    padding.PaddingTop = UDim.new(0, 10)
+    padding.PaddingBottom = UDim.new(0, 10)
+    padding.PaddingLeft = UDim.new(0, 10)
+    padding.PaddingRight = UDim.new(0, 10)
+    padding.Parent = frame
+    
+    table.insert(self.panels, frame)
+    return frame
+end
+
+-- Add title to panel
+function UIManager:AddTitle(panel, titleText)
+    local title = Instance.new("TextLabel")
+    title.Name = "Title"
+    title.Size = UDim2.new(1, 0, 0, 30)
+    title.BackgroundTransparency = 1
+    title.TextColor3 = Color3.fromRGB(255, 255, 255)
+    title.Text = titleText
+    title.TextSize = 16
+    title.Font = Enum.Font.GothamBold
+    title.Parent = panel
+    return title
+end
+
+-- Add information label
+function UIManager:AddLabel(panel, labelText)
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 0, 20)
+    label.BackgroundTransparency = 1
+    label.TextColor3 = Color3.fromRGB(200, 200, 200)
+    label.Text = labelText
+    label.TextSize = 12
+    label.Font = Enum.Font.Gotham
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = panel
+    return label
+end
+
+-- Create colored player info display
+function UIManager:CreatePlayerInfo(panel, playerName, role, roleColor)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 0, 25)
+    container.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    container.BorderSizePixel = 0
+    container.Parent = panel
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = container
+    
+    -- Role color indicator
+    local indicator = Instance.new("Frame")
+    indicator.Size = UDim2.new(0, 4, 1, 0)
+    indicator.BackgroundColor3 = roleColor
+    indicator.BorderSizePixel = 0
+    indicator.Parent = container
+    
+    -- Player name
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Size = UDim2.new(0.6, -10, 1, 0)
+    nameLabel.Position = UDim2.new(0, 10, 0, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    nameLabel.Text = playerName
+    nameLabel.TextSize = 11
+    nameLabel.Font = Enum.Font.Gotham
+    nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    nameLabel.Parent = container
+    
+    -- Role text
+    local roleLabel = Instance.new("TextLabel")
+    roleLabel.Size = UDim2.new(0.4, 0, 1, 0)
+    roleLabel.Position = UDim2.new(0.6, 0, 0, 0)
+    roleLabel.BackgroundTransparency = 1
+    roleLabel.TextColor3 = roleColor
+    roleLabel.Text = role
+    roleLabel.TextSize = 11
+    roleLabel.Font = Enum.Font.GothamBold
+    roleLabel.TextXAlignment = Enum.TextXAlignment.Right
+    roleLabel.Parent = container
+end
+
+-- ============================================
+-- SETUP UI
+-- ============================================
+
+local screenGui = UIManager:CreateMainGui()
+
+-- Create toggle button (draggable circle)
+UIManager:CreateToggleButton(screenGui)
+
+-- Create main panel
+local mainPanel = UIManager:CreatePanel(
+    screenGui,
+    "MainPanel",
+    UDim2.new(0, 300, 0, 400),
+    UDim2.new(0, 100, 0, 100)
+)
+
+-- Add title
+UIManager:AddTitle(mainPanel, "🎮 Game Info")
+
+-- Add ListLayout for automatic positioning
+local listLayout = Instance.new("UIListLayout")
+listLayout.Padding = UDim.new(0, 8)
+listLayout.FillDirection = Enum.FillDirection.Vertical
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Parent = mainPanel
+
+-- Info labels
+local infoLabel = UIManager:AddLabel(mainPanel, "Players in server: " .. #Players:GetPlayers())
+infoLabel.LayoutOrder = 1
+
+local yourRoleLabel = UIManager:AddLabel(mainPanel, "Your role: Practice")
+yourRoleLabel.LayoutOrder = 2
+
+-- Players section
+local playersLabel = Instance.new("TextLabel")
+playersLabel.Size = UDim2.new(1, 0, 0, 20)
+playersLabel.BackgroundTransparency = 1
+playersLabel.TextColor3 = Color3.fromRGB(100, 200, 255)
+playersLabel.Text = "━━ Players ━━"
+playersLabel.TextSize = 12
+playersLabel.Font = Enum.Font.GothamBold
+playersLabel.LayoutOrder = 3
+playersLabel.Parent = mainPanel
+
+-- Example player displays
+local roleExamples = {
+    {name = "Player1", role = "Innocent", color = Color3.fromRGB(0, 255, 0)},
+    {name = "Player2", role = "Murderer", color = Color3.fromRGB(255, 0, 0)},
+    {name = "Player3", role = "Sheriff", color = Color3.fromRGB(0, 100, 255)},
+    {name = "Player4", role = "Hero", color = Color3.fromRGB(255, 255, 0)},
+}
+
+for i, example in ipairs(roleExamples) do
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 0, 25)
+    container.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    container.BorderSizePixel = 0
+    container.LayoutOrder = 3 + i
+    container.Parent = mainPanel
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = container
+    
+    -- Color indicator
+    local indicator = Instance.new("Frame")
+    indicator.Size = UDim2.new(0, 4, 1, 0)
+    indicator.BackgroundColor3 = example.color
+    indicator.BorderSizePixel = 0
+    indicator.Parent = container
+    
+    -- Name
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Size = UDim2.new(0.6, -10, 1, 0)
+    nameLabel.Position = UDim2.new(0, 10, 0, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    nameLabel.Text = example.name
+    nameLabel.TextSize = 11
+    nameLabel.Font = Enum.Font.Gotham
+    nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    nameLabel.Parent = container
+    
+    -- Role
+    local roleLabel = Instance.new("TextLabel")
+    roleLabel.Size = UDim2.new(0.4, 0, 1, 0)
+    roleLabel.Position = UDim2.new(0.6, 0, 0, 0)
+    roleLabel.BackgroundTransparency = 1
+    roleLabel.TextColor3 = example.color
+    roleLabel.Text = example.role
+    roleLabel.TextSize = 11
+    roleLabel.Font = Enum.Font.GothamBold
+    roleLabel.TextXAlignment = Enum.TextXAlignment.Right
+    roleLabel.Parent = container
+end
+
+-- ============================================
+-- UPDATE LOOP
+-- ============================================
+
+RunService.RenderStepped:Connect(function()
+    -- Update player count
+    infoLabel.Text = "Players in server: " .. #Players:GetPlayers()
+    
+    -- You can add real-time updates here
+    -- For example: checking actual game state, updating player positions, etc.
+end)
+
+-- ============================================
+-- LEARNING NOTES
+-- ============================================
+
+--[[
+    KEY CONCEPTS TO UNDERSTAND:
+    
+    1. UI HIERARCHY:
+       - ScreenGui is the top container
+       - Frames and TextLabels are children
+       - Everything is positioned with UDim2 (offsets + scale)
+    
+    2. DRAGGING SYSTEM:
+       - MouseButton1Down detects click start
+       - InputEnded detects click release
+       - RenderStepped tracks mouse position every frame
+    
+    3. CIRCULAR BUTTON:
+       - UICorner with CornerRadius = 0.5 makes it circular
+       - UIStroke adds the white border
+    
+    4. COLOR SYSTEM:
+       - Each role has a unique Color3.fromRGB() value
+       - Green (0, 255, 0) = Innocent
+       - Red (255, 0, 0) = Murderer
+       - Blue (0, 100, 255) = Sheriff
+       - Yellow (255, 255, 0) = Hero
+    
+    5. AUTOMATIC LAYOUT:
+       - UIListLayout auto-arranges children
+       - LayoutOrder controls the order
+       - FillDirection determines layout direction
+    
+    6. NEXT STEPS TO PRACTICE:
+       - Add toggle buttons for different features
+       - Create a settings panel
+       - Add real player detection logic
+       - Implement targeting system
+       - Add keyboard hotkey support
+       - Create custom themes
+]]
+
+print("✅ Custom UI Practice Script Loaded!")
+print("Toggle button at top-left corner (draggable)")
+print("Click the blue circle to show/hide the UI panel")
